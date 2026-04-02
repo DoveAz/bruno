@@ -1,0 +1,72 @@
+name: Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+      - package-lock.json
+      - scripts/**
+      - packages/**
+      - .github/actions/**
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    name: Build And Publish Windows Release
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node Dependencies
+        uses: ./.github/actions/common/setup-node-deps
+
+      - name: Prepare Release Metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_version="$(node -p "require('./packages/bruno-electron/package.json').version")"
+          short_sha="${GITHUB_SHA::7}"
+          release_version="${base_version}-dev.${short_sha}"
+          tag_name="win-v${release_version}"
+
+          node -e "const fs=require('fs'); const version=process.argv[1]; ['packages/bruno-app/package.json','packages/bruno-electron/package.json'].forEach((file)=>{ const pkg=JSON.parse(fs.readFileSync(file, 'utf8')); pkg.version=version; fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n'); });" "$release_version"
+
+          {
+            echo "release_version=${release_version}"
+            echo "tag_name=${tag_name}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build Web App
+        run: npm run build:web
+
+      - name: Build Windows Package
+        run: npm run build:electron
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: Bruno Windows ${{ steps.meta.outputs.release_version }}
+          prerelease: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            packages/bruno-electron/out/*.exe
+            packages/bruno-electron/out/*.blockmap
+            packages/bruno-electron/out/*.yml
