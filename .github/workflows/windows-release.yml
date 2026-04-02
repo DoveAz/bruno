@@ -11,6 +11,7 @@ on:
       - scripts/**
       - packages/**
       - .github/actions/**
+      - .github/workflows/windows-release.yml
 
 concurrency:
   group: windows-release-${{ github.ref }}
